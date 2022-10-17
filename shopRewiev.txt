@@ -1,0 +1,129 @@
+// SPDX-License-Identifier: GPL-3.0
+pragma solidity 0.8.17;
+
+contract ShopRewiev{
+    struct Shop{
+        uint id;
+        address shop_address;
+        string city;
+        address[] workers;
+        Rewiev[] rewievs; 
+    }
+    
+    struct Rewiev{
+        uint stars;
+        string comment;
+        uint likes;
+        uint dislikes;
+        RewievComment[] comments;
+    }
+
+    struct RewievComment{
+        string comment;
+        uint likes;
+        uint dislikes;
+    }
+
+    struct User{
+        bytes32 password;
+        uint shopId; 
+        uint role; // 0 - buyer, 1 - seller, 2 - admin, возможно 3 - shop
+        // uint currentRole; // если смена роли на контракте 
+        string[] history; // история действий(интерфейс или контракт) и насколько точная история
+    }
+
+    struct RequestChangeRole{
+        address user;
+        uint role;
+        bool status;
+    }
+
+
+    Shop[] public shops;
+    mapping(address => User) public users;
+    RequestChangeRole[] public RequestsChangeRole;
+
+    // Фунционал админа
+    // Надо ли разделять на добавление админа, повышение до продавца и понижение до покупателя
+    // Надо ли смотреть на запросы
+    function changeRole(address user, uint role) public{
+        require(users[msg.sender].role == 2, "You not admin");
+        require(users[user].role != role, "User already has this role");
+
+        users[user].role = role;
+
+        users[msg.sender].history.push("Admin changed user role"); // Хотелось бы узнавать на какую роль
+    }  
+
+    function createNewShop(address shop, string memory city) public{
+        require(users[msg.sender].role == 2, "You not admin");
+
+        Shop storage newShop = shops.push();
+        newShop.id = shops.length;
+        newShop.shop_address = shop;
+        newShop.city = city;
+
+        users[msg.sender].history.push("Admin added a new shop");
+    } 
+
+
+    // Функционал покупателя
+    function createRewiev(uint id_shop, uint stars, string memory comment) public{ // Создание отзыва
+        require(users[msg.sender].role == 0, "You not buyer");
+        require(shops.length >= id_shop, "This shop doesnt exists");
+        require(stars >0 && stars <11, "use a 10 point system");
+
+        Rewiev storage newRewiev = shops[id_shop].rewievs.push();
+        newRewiev.stars = stars;
+        newRewiev.comment = comment;
+
+        users[msg.sender].history.push("Create rewiev");
+    }
+
+    function leaveLikeDislikeOnRewiev(uint id_shop, uint id_rewiev, bool rate) public{ // Оценка отзыва
+        require(shops.length >= id_shop, "This shop doesnt exists");
+        require(shops[id_shop].rewievs.length >= id_rewiev, "This rewiev doesnt exists");
+
+        if (rate){
+           shops[id_shop].rewievs[id_rewiev].likes += 1; 
+        }
+        else{
+            shops[id_shop].rewievs[id_rewiev].dislikes += 1; 
+        }
+        
+        users[msg.sender].history.push("Appreciated the review");
+    }
+
+    function commentRewiev(uint id_shop, uint id_rewiev,string memory comment) public{ // Оставить комментарий
+        require(shops.length >= id_shop, "This shop doesnt exists");
+        require(shops[id_shop].rewievs.length >= id_rewiev, "This rewiev doesnt exists");
+
+        RewievComment storage newComment = shops[id_shop].rewievs[id_rewiev].comments.push();
+        newComment.comment = comment;
+
+        users[msg.sender].history.push("Left a comment on the review");
+
+    }
+
+    function leaveLikeDislikeOnComment(uint id_shop, uint id_rewiev, uint id_comment, bool rate)  public{ //оценка комментария
+        require(shops.length >= id_shop, "This shop doesnt exists");
+        require(shops[id_shop].rewievs.length >= id_rewiev, "This rewiev doesnt exists");
+        require(shops[id_shop].rewievs[id_rewiev].comments.length >= id_comment, "This comment doesnt exists");
+        
+        if (rate){
+           shops[id_shop].rewievs[id_rewiev].comments[id_comment].likes += 1;
+        }
+        else{
+            shops[id_shop].rewievs[id_rewiev].comments[id_comment].dislikes += 1;
+        }
+
+        users[msg.sender].history.push("Appreciated the comment");
+    }
+
+    function RequestRoleChange(uint role) public{
+        require(users[msg.sender].role != role, "You already have this role");
+
+        RequestsChangeRole.push(RequestChangeRole(msg.sender,role,false));
+
+    }
+}
