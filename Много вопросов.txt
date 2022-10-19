@@ -1,0 +1,240 @@
+// SPDX-License-Identifier: GPL-3.0
+pragma solidity 0.8.17;
+
+contract ShopRewiev{
+    struct Shop{
+        address shop_address;
+        string city;
+        address[] workers;
+        Rewiev[] rewievs;
+    }
+
+    struct Rewiev{
+        address owner;
+        uint stars;
+        string rewiev;
+        LikeDislike [] LikeDislikes;
+        RewievComment[] comments;
+    }
+
+    struct RewievComment{
+        address owner;
+        string comment;
+        LikeDislike [] LikeDislikes;
+    }
+
+    struct User{
+        bytes32 password;
+        uint role; // 0 - buyer, 1 - seller, 2 - admin
+        // uint currentRole; // если смена роли на контракте
+        string[] history; // история действий(интерфейс или контракт) и насколько точная история
+        uint id_shop;   // Id магазина в котором работает, 0-если не работает 
+                        // скорее всего лучше сделать массивом, можно с указаием индекса работников
+                         
+        // bool statusChangeRole; //Подал ли заявка на изменение роли
+
+    }
+
+    struct RequestChangeRole{
+        address user;
+        uint role; // По идеи не надо так как можно либо повысить до продавца или уволить
+        uint id_shop; //Куда повысить или откуда уволить
+        bool status;
+    }
+
+    struct LikeDislike{
+        address owner;
+        bool rate; // like, dislike
+    }
+
+    // struct WhichShopWork{ // вариант если работь с массивом для продавцов
+    //     uint id_shop; //  в каком магазине работает
+    //     uint id_worker; // какой по месту работы
+    // }
+
+
+
+    Shop[] public shops;
+    mapping(address => User) public users;
+    RequestChangeRole[] public RequestsChangeRole;
+
+    constructor(){
+        shops.push(); // 0 магазин, чтобы проверять в каком магазине работает продавец
+    }
+    
+
+    // Фунционал админа
+    // Надо ли разделять на добавление админа, повышение до продавца и понижение до покупателя
+    // Надо ли смотреть на запросы
+    // function changeRole(address user, uint role) public{ // Смена роли админом без запроса
+    // require(users[msg.sender].role == 2, "You not admin");
+    // require(users[user].role != role, "User already has this role");
+
+    // users[user].role = role;
+
+    // users[msg.sender].history.push("Admin changed user role"); // Хотелось бы узнавать на какую роль
+    // }
+
+    function changeRole (address user, uint id_shop_up) public{ // продавец указывает 0 магазин
+        require(users[msg.sender].role == 2, "you not admin");
+        require(users[user].role != 2, "it is admin");
+
+        if(users[user].role == 0){// повышение покупателя до продавца
+            require(shops.length >=id_shop_up,"This shop doesnt exists");
+            require(shops[id_shop_up].shop_address != address(0),"This shop has been deleted");
+            users[user].role = 1;
+            shops[id_shop_up].workers.push(user);
+        }
+        else{ // понижение продавца до покупателя
+            users[user].role = 0;
+            uint id_shop_down = users[user].id_shop;
+            for(uint i=0;i <shops[id_shop_down].workers.length;i++){
+                if(shops[id_shop_down].workers[i] == user){
+                delete shops[id_shop_down].workers[i];
+                return;
+                }
+            }
+        }
+    }
+
+    // function changeRoleOnRequest(uint id_request) public{ // админ может изменить роль после заявки(надо обдумать)
+
+    // }
+
+    function addAdmin(address user) public{
+        require(users[msg.sender].role == 2, "You not admin");
+        require(users[user].role != 2, "He already admin");
+        if(users[user].id_shop != 0){
+            address[] storage workers = shops[users[user].id_shop].workers;
+            for(uint i=0;i<workers.length;i++){
+                delete workers[i]; 
+            }
+
+        }
+        users[user].role = 2;
+    }
+
+    function createNewShop(address shopAddress, string memory city) public{ // Добавление нового магазина
+        require(users[msg.sender].role == 2, "You not admin");
+
+        Shop storage newShop = shops.push();
+        newShop.shop_address = shopAddress;
+        newShop.city = city;
+
+        users[msg.sender].history.push("Admin added a new shop");
+    }
+
+
+
+    function DeleteShop(uint id_shop) public{ // Удаление магазина
+        require(users[msg.sender].role == 2, "You not admin");
+        require(shops.length >=id_shop,"This shop doesnt exists");
+        require(shops[id_shop].shop_address != address(0),"This shop has been deleted");
+
+        Shop storage thisShop = shops[id_shop];
+
+        for(uint i=0;i<thisShop.workers.length;i++){
+            address user = thisShop.workers[i];
+            users[user].role = 0;
+        }
+
+        delete shops[id_shop];
+
+    }
+
+
+    // Функционал покупателя
+    function createRewiev(uint id_shop, uint stars, string memory rewiev) public{ // Создание отзыва
+        require(users[msg.sender].role == 0, "You not buyer");
+        require(shops.length >= id_shop, "This shop doesnt exists");
+        require(shops[id_shop].shop_address != address(0),"This shop has been deleted");
+        require(stars >0 && stars <11, "use a 10 point system");
+
+        Rewiev storage newRewiev = shops[id_shop].rewievs.push();
+        newRewiev.owner = msg.sender;
+        newRewiev.stars = stars;
+        newRewiev.rewiev = rewiev;
+
+        users[msg.sender].history.push("Create rewiev");
+    }
+
+    function leaveLikeDislikeOnRewiev(uint id_shop, uint id_rewiev, bool rate) public{ // Оценка отзыва
+        require(shops.length >= id_shop, "This shop doesnt exists");
+        require(shops[id_shop].rewievs.length >= id_rewiev, "This rewiev doesnt exists");
+        require(shops[id_shop].shop_address != address(0),"This shop has been deleted");
+
+
+        shops[id_shop].rewievs[id_rewiev].LikeDislikes.push(LikeDislike(msg.sender,rate));
+
+        users[msg.sender].history.push("Appreciated the review");
+    }
+
+    function commentRewiev(uint id_shop, uint id_rewiev,string memory comment) public{ // Оставить комментарий
+        require(shops.length>= id_shop, "This shop doesnt exists");
+        require(shops[id_shop].rewievs.length >= id_rewiev, "This rewiev doesnt exists");
+        require(shops[id_shop].shop_address != address(0),"This shop has been deleted");
+
+        RewievComment storage newComment = shops[id_shop].rewievs[id_rewiev].comments.push();
+        newComment.owner = msg.sender;
+        newComment.comment = comment;
+
+        users[msg.sender].history.push("Left a comment on the review");
+
+    }
+
+    function leaveLikeDislikeOnComment(uint id_shop, uint id_rewiev, uint id_comment, bool rate) public{ //оценка комментария
+        require(shops.length >= id_shop, "This shop doesnt exists");
+        require(shops[id_shop].shop_address != address(0),"This shop has been deleted");
+        require(shops[id_shop].rewievs.length >= id_rewiev, "This rewiev doesnt exists");
+        require(shops[id_shop].rewievs[id_rewiev].comments.length >= id_comment, "This comment doesnt exists");
+
+
+
+        shops[id_shop].rewievs[id_rewiev].comments[id_comment].LikeDislikes.push(LikeDislike(msg.sender,rate));
+
+
+        users[msg.sender].history.push("Appreciated the comment");
+    }
+
+
+
+    function RequestRoleChange(uint role, uint id_shop) public{
+        require(users[msg.sender].role != role, "You already have this role");
+        if(role==0){
+            require(shops.length >= id_shop, "This shop doesnt exists");
+            require(shops[id_shop].shop_address != address(0),"This shop has been deleted");
+            RequestsChangeRole.push(RequestChangeRole(msg.sender,role,id_shop,false));
+        }
+        else{
+           RequestsChangeRole.push(RequestChangeRole(msg.sender,role,users[msg.sender].id_shop,false)); 
+        }
+
+
+        // RequestsChangeRole.push(RequestChangeRole(msg.sender,role,id_shop,false));
+
+    }
+    function FullfillRequest(uint id_request) public{
+        address  user =  RequestsChangeRole[id_request].user;
+        if(RequestsChangeRole[id_request].role == users[user].role){
+            RequestsChangeRole[id_request].status = true;
+            revert("his role has already been changed");
+        }
+        else{
+            changeRole(user,RequestsChangeRole[id_request].id_shop);
+        }
+    }
+}
+
+// function Up_Down_Byer (address Inp_people) public{
+// require(Peoples[msg.sender] == 1, "you not admin");
+// require(Peoples[Inp_people] != 2, "it is admin");
+// if(Peoples[Inp_people] == 0){
+// Peoples[Inp_people] =1;
+// }else{
+// Peoples[Inp_people] =0;
+// }
+// }
+
+
+// Основные вопросы:
+// Может ли человек в нашем случае работать в нескольких магазинах
